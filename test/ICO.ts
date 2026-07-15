@@ -79,6 +79,34 @@ describe("ICO", function () {
     ).to.be.revertedWith("ICO is not open");
   });
 
+  it("opens exactly at the start date once empty blocks are mined up to it", async function () {
+    const { ico, buyer, startDate, networkHelpers, ethers } = await deployFixture();
+
+    const now = await networkHelpers.time.latest();
+    await networkHelpers.mine(startDate - now, { interval: 1 });
+
+    expect(await networkHelpers.time.latest()).to.equal(startDate);
+    expect(await ico.isOpen()).to.equal(true);
+
+    await expect(
+      ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") }),
+    ).to.not.revert(ethers);
+  });
+
+  it("closes right after the end date once empty blocks are mined past it", async function () {
+    const { ico, buyer, endDate, networkHelpers, ethers } = await deployFixture();
+
+    const now = await networkHelpers.time.latest();
+    await networkHelpers.mine(endDate - now + 1, { interval: 1 });
+
+    expect(await networkHelpers.time.latest()).to.equal(endDate + 1);
+    expect(await ico.isOpen()).to.equal(false);
+
+    await expect(
+      ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") }),
+    ).to.be.revertedWith("ICO is not open");
+  });
+
   it("rejects buyTokens when not enough tokens are left for sale", async function () {
     const { ico, buyer, startDate, icoAllocation, pricePerToken, networkHelpers, ethers } =
       await deployFixture();
