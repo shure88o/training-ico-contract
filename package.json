@@ -1,0 +1,15 @@
+{
+  "name": "training-ico-contract",
+  "version": "1.0.0",
+  "description": "Training Contract - ICO (Initial Coin Offering)",
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat ignition deploy ignition/modules/ICO.ts"
+  },
+  "devDependencies": {
+    "hardhat": "^3.9.1",
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.7"
+  }
+}
