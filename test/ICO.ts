@@ -6,13 +6,14 @@ describe("ICO", function () {
     const { ethers, networkHelpers } = await network.create();
     const [owner, buyer] = await ethers.getSigners();
 
-    const MockERC20 = await ethers.getContractFactory("MockERC20");
-    const token = await MockERC20.deploy(ethers.parseEther("1000000"));
+    const Token = await ethers.getContractFactory("Token");
+    const token = await Token.deploy("Training Token", "TRN", ethers.parseEther("1000000"));
 
     const now = await networkHelpers.time.latest();
     const startDate = now + 60;
     const endDate = now + 3600;
     const pricePerToken = ethers.parseEther("0.001");
+    const icoAllocation = ethers.parseEther("500000");
 
     const ICO = await ethers.getContractFactory("ICO");
     const ico = await ICO.deploy(
@@ -22,9 +23,20 @@ describe("ICO", function () {
       endDate,
     );
 
-    await token.transfer(await ico.getAddress(), ethers.parseEther("500000"));
+    await token.transfer(await ico.getAddress(), icoAllocation);
 
-    return { ico, token, owner, buyer, startDate, endDate, pricePerToken, networkHelpers, ethers };
+    return {
+      ico,
+      token,
+      owner,
+      buyer,
+      startDate,
+      endDate,
+      pricePerToken,
+      icoAllocation,
+      networkHelpers,
+      ethers,
+    };
   }
 
   it("sets the constructor params", async function () {
@@ -67,13 +79,30 @@ describe("ICO", function () {
     ).to.be.revertedWith("ICO is not open");
   });
 
-  it("lets only the owner withdraw the collected ETH", async function () {
-    const { ico, owner, buyer, startDate, networkHelpers, ethers } = await deployFixture();
+  it("rejects buyTokens when not enough tokens are left for sale", async function () {
+    const { ico, buyer, startDate, icoAllocation, pricePerToken, networkHelpers, ethers } =
+      await deployFixture();
+
+    await networkHelpers.time.increaseTo(startDate);
+
+    const tooMuch = ((icoAllocation + ethers.parseEther("1")) * pricePerToken) / 10n ** 18n;
+
+    await expect(
+      ico.connect(buyer).buyTokens({ value: tooMuch }),
+    ).to.be.revertedWith("not enough tokens left");
+  });
+
+  it("lets only the owner withdraw the collected ETH, and only after the ICO ends", async function () {
+    const { ico, owner, buyer, startDate, endDate, networkHelpers, ethers } =
+      await deployFixture();
 
     await networkHelpers.time.increaseTo(startDate);
     await ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") });
 
+    await expect(ico.connect(owner).withdraw()).to.be.revertedWith("ICO still running");
     await expect(ico.connect(buyer).withdraw()).to.be.revertedWith("not owner");
+
+    await networkHelpers.time.increaseTo(endDate + 1);
 
     const balanceBefore = await ethers.provider.getBalance(owner.address);
     const tx = await ico.connect(owner).withdraw();

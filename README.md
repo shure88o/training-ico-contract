@@ -24,21 +24,20 @@ npx hardhat node
 
 Terminal 2:
 ```bash
-npx hardhat ignition deploy ignition/modules/ICODemo.ts --network localhost
+npx hardhat ignition deploy ignition/modules/ICO.ts --network localhost
 ```
 
-`ICODemo` deploys a test token and sends part of the supply to the ICO automatically — nothing to configure manually.
+The module deploys the `Token`, deploys the `ICO`, and sends part of the token supply to the ICO — nothing to configure manually. Override defaults (name, symbol, supply, price, dates) with a `--parameters` file if needed.
 
 ## Structure
 
 ```
 contracts/
-  ICO.sol                 # the ICO itself
+  Token.sol              # OpenZeppelin ERC-20, sold by the ICO
+  ICO.sol                # the ICO itself
   interfaces/IERC20.sol
-  mocks/MockERC20.sol     # test-only token
 ignition/modules/
-  ICO.ts                  # production module, takes an existing token address
-  ICODemo.ts              # local demo module, deploys its own token
+  ICO.ts
 test/
   ICO.ts
 ```

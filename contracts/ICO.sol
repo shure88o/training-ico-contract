@@ -43,6 +43,7 @@ contract ICO {
 
         uint256 tokensToSend = (msg.value * 1e18) / pricePerToken;
         require(tokensToSend > 0, "not enough ETH sent");
+        require(token.balanceOf(address(this)) >= tokensToSend, "not enough tokens left");
 
         bool sent = token.transfer(msg.sender, tokensToSend);
         require(sent, "token transfer failed");
@@ -51,6 +52,7 @@ contract ICO {
     }
 
     function withdraw() external onlyOwner {
+        require(block.timestamp > endDate, "ICO still running");
         (bool sent, ) = owner.call{value: address(this).balance}("");
         require(sent, "withdraw failed");
     }
