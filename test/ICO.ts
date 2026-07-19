@@ -1,159 +1,178 @@
 import { expect } from "chai";
-import { network } from "hardhat";
+import { deployFixture } from "./helpers/fixture.js";
 
-describe("ICO", function () {
-  async function deployFixture() {
-    const { ethers, networkHelpers } = await network.create();
-    const [owner, buyer] = await ethers.getSigners();
-
-    const Token = await ethers.getContractFactory("Token");
-    const token = await Token.deploy("Training Token", "TRN", ethers.parseEther("1000000"));
-
-    const now = await networkHelpers.time.latest();
-    const startDate = now + 60;
-    const endDate = now + 3600;
-    const pricePerToken = ethers.parseEther("0.001");
-    const icoAllocation = ethers.parseEther("500000");
-
-    const ICO = await ethers.getContractFactory("ICO");
-    const ico = await ICO.deploy(
-      await token.getAddress(),
-      pricePerToken,
-      startDate,
-      endDate,
-    );
-
-    await token.transfer(await ico.getAddress(), icoAllocation);
-
-    return {
+describe("ICO — constructor & phases", function () {
+  it("sets the constructor params", async function () {
+    const {
       ico,
       token,
-      owner,
-      buyer,
+      tierThresholds,
+      tierPrices,
+      softCapWei,
       startDate,
+      publicSaleStart,
       endDate,
-      pricePerToken,
-      icoAllocation,
-      networkHelpers,
-      ethers,
-    };
-  }
-
-  it("sets the constructor params", async function () {
-    const { ico, token, startDate, endDate, pricePerToken } = await deployFixture();
+      merkleRoot,
+      cliffDuration,
+      vestingDuration,
+      hardCap,
+    } = await deployFixture();
 
     expect(await ico.token()).to.equal(await token.getAddress());
+    expect(await ico.getTierThresholds()).to.deep.equal(tierThresholds);
+    expect(await ico.getTierPrices()).to.deep.equal(tierPrices);
+    expect(await ico.softCapWei()).to.equal(softCapWei);
     expect(await ico.startDate()).to.equal(startDate);
+    expect(await ico.publicSaleStart()).to.equal(publicSaleStart);
     expect(await ico.endDate()).to.equal(endDate);
-    expect(await ico.pricePerToken()).to.equal(pricePerToken);
+    expect(await ico.merkleRoot()).to.equal(merkleRoot);
+    expect(await ico.cliffDuration()).to.equal(cliffDuration);
+    expect(await ico.vestingDuration()).to.equal(vestingDuration);
+    expect(await ico.hardCapTokens()).to.equal(hardCap);
+    expect(await ico.owner()).to.not.equal(await ico.getAddress());
   });
 
-  it("rejects buyTokens before the start date", async function () {
-    const { ico, buyer, ethers } = await deployFixture();
+  it("rejects a zero token address", async function () {
+    const { ethers, tierThresholds, tierPrices, softCapWei, startDate, publicSaleStart, endDate, merkleRoot, cliffDuration, vestingDuration } =
+      await deployFixture({ fundIco: false });
 
+    const ICO = await ethers.getContractFactory("ICO");
     await expect(
-      ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") }),
-    ).to.be.revertedWith("ICO is not open");
+      ICO.deploy(
+        ethers.ZeroAddress,
+        tierThresholds,
+        tierPrices,
+        softCapWei,
+        startDate,
+        publicSaleStart,
+        endDate,
+        merkleRoot,
+        cliffDuration,
+        vestingDuration,
+      ),
+    ).to.be.revertedWithCustomError(ICO, "ZeroAddress");
   });
 
-  it("sells tokens at the fixed price during the date range", async function () {
-    const { ico, token, buyer, startDate, pricePerToken, networkHelpers, ethers } =
-      await deployFixture();
+  it("rejects startDate >= publicSaleStart", async function () {
+    const { ethers, token, tierThresholds, tierPrices, softCapWei, startDate, endDate, merkleRoot, cliffDuration, vestingDuration } =
+      await deployFixture({ fundIco: false });
+
+    const ICO = await ethers.getContractFactory("ICO");
+    await expect(
+      ICO.deploy(
+        await token.getAddress(),
+        tierThresholds,
+        tierPrices,
+        softCapWei,
+        startDate,
+        startDate,
+        endDate,
+        merkleRoot,
+        cliffDuration,
+        vestingDuration,
+      ),
+    ).to.be.revertedWithCustomError(ICO, "InvalidDates");
+  });
+
+  it("rejects publicSaleStart >= endDate", async function () {
+    const { ethers, token, tierThresholds, tierPrices, softCapWei, startDate, publicSaleStart, merkleRoot, cliffDuration, vestingDuration } =
+      await deployFixture({ fundIco: false });
+
+    const ICO = await ethers.getContractFactory("ICO");
+    await expect(
+      ICO.deploy(
+        await token.getAddress(),
+        tierThresholds,
+        tierPrices,
+        softCapWei,
+        startDate,
+        publicSaleStart,
+        publicSaleStart,
+        merkleRoot,
+        cliffDuration,
+        vestingDuration,
+      ),
+    ).to.be.revertedWithCustomError(ICO, "InvalidDates");
+  });
+
+  it("rejects mismatched tier array lengths", async function () {
+    const { ethers, token, tierPrices, softCapWei, startDate, publicSaleStart, endDate, merkleRoot, cliffDuration, vestingDuration } =
+      await deployFixture({ fundIco: false });
+
+    const ICO = await ethers.getContractFactory("ICO");
+    await expect(
+      ICO.deploy(
+        await token.getAddress(),
+        [ethers.parseEther("100000")],
+        tierPrices,
+        softCapWei,
+        startDate,
+        publicSaleStart,
+        endDate,
+        merkleRoot,
+        cliffDuration,
+        vestingDuration,
+      ),
+    ).to.be.revertedWithCustomError(ICO, "InvalidTierConfig");
+  });
+
+  it("rejects non-ascending tier thresholds", async function () {
+    const { ethers, token, tierPrices, softCapWei, startDate, publicSaleStart, endDate, merkleRoot, cliffDuration, vestingDuration } =
+      await deployFixture({ fundIco: false });
+
+    const ICO = await ethers.getContractFactory("ICO");
+    await expect(
+      ICO.deploy(
+        await token.getAddress(),
+        [ethers.parseEther("200000"), ethers.parseEther("100000"), ethers.parseEther("500000")],
+        tierPrices,
+        softCapWei,
+        startDate,
+        publicSaleStart,
+        endDate,
+        merkleRoot,
+        cliffDuration,
+        vestingDuration,
+      ),
+    ).to.be.revertedWithCustomError(ICO, "InvalidTierConfig");
+  });
+
+  it("rejects non-ascending tier prices", async function () {
+    const { ethers, token, tierThresholds, softCapWei, startDate, publicSaleStart, endDate, merkleRoot, cliffDuration, vestingDuration } =
+      await deployFixture({ fundIco: false });
+
+    const ICO = await ethers.getContractFactory("ICO");
+    await expect(
+      ICO.deploy(
+        await token.getAddress(),
+        tierThresholds,
+        [ethers.parseEther("0.002"), ethers.parseEther("0.0015"), ethers.parseEther("0.003")],
+        softCapWei,
+        startDate,
+        publicSaleStart,
+        endDate,
+        merkleRoot,
+        cliffDuration,
+        vestingDuration,
+      ),
+    ).to.be.revertedWithCustomError(ICO, "InvalidTierConfig");
+  });
+
+  it("walks through Pending -> Presale -> Public -> Ended -> Finalized", async function () {
+    const { ico, startDate, publicSaleStart, endDate, networkHelpers } = await deployFixture();
+
+    expect(await ico.phase()).to.equal(0n); // Pending
 
     await networkHelpers.time.increaseTo(startDate);
+    expect(await ico.phase()).to.equal(1n); // Presale
 
-    const payment = ethers.parseEther("1");
-    await ico.connect(buyer).buyTokens({ value: payment });
-
-    const expectedTokens = (payment * 10n ** 18n) / pricePerToken;
-    expect(await token.balanceOf(buyer.address)).to.equal(expectedTokens);
-  });
-
-  it("rejects buyTokens after the end date", async function () {
-    const { ico, buyer, endDate, networkHelpers, ethers } = await deployFixture();
+    await networkHelpers.time.increaseTo(publicSaleStart);
+    expect(await ico.phase()).to.equal(2n); // Public
 
     await networkHelpers.time.increaseTo(endDate + 1);
+    expect(await ico.phase()).to.equal(3n); // Ended
 
-    await expect(
-      ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") }),
-    ).to.be.revertedWith("ICO is not open");
-  });
-
-  it("opens exactly at the start date once empty blocks are mined up to it", async function () {
-    const { ico, buyer, startDate, networkHelpers, ethers } = await deployFixture();
-
-    const now = await networkHelpers.time.latest();
-    await networkHelpers.mine(startDate - now, { interval: 1 });
-
-    expect(await networkHelpers.time.latest()).to.equal(startDate);
-    expect(await ico.isOpen()).to.equal(true);
-
-    await expect(
-      ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") }),
-    ).to.not.revert(ethers);
-  });
-
-  it("closes right after the end date once empty blocks are mined past it", async function () {
-    const { ico, buyer, endDate, networkHelpers, ethers } = await deployFixture();
-
-    const now = await networkHelpers.time.latest();
-    await networkHelpers.mine(endDate - now + 1, { interval: 1 });
-
-    expect(await networkHelpers.time.latest()).to.equal(endDate + 1);
-    expect(await ico.isOpen()).to.equal(false);
-
-    await expect(
-      ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") }),
-    ).to.be.revertedWith("ICO is not open");
-  });
-
-  it("rejects buyTokens when not enough tokens are left for sale", async function () {
-    const { ico, buyer, startDate, icoAllocation, pricePerToken, networkHelpers, ethers } =
-      await deployFixture();
-
-    await networkHelpers.time.increaseTo(startDate);
-
-    const tooMuch = ((icoAllocation + ethers.parseEther("1")) * pricePerToken) / 10n ** 18n;
-
-    await expect(
-      ico.connect(buyer).buyTokens({ value: tooMuch }),
-    ).to.be.revertedWith("not enough tokens left");
-  });
-
-  it("lets only the owner withdraw the collected ETH, and only after the ICO ends", async function () {
-    const { ico, owner, buyer, startDate, endDate, networkHelpers, ethers } =
-      await deployFixture();
-
-    await networkHelpers.time.increaseTo(startDate);
-    await ico.connect(buyer).buyTokens({ value: ethers.parseEther("1") });
-
-    await expect(ico.connect(owner).withdraw()).to.be.revertedWith("ICO still running");
-    await expect(ico.connect(buyer).withdraw()).to.be.revertedWith("not owner");
-
-    await networkHelpers.time.increaseTo(endDate + 1);
-
-    const balanceBefore = await ethers.provider.getBalance(owner.address);
-    const tx = await ico.connect(owner).withdraw();
-    const receipt = await tx.wait();
-    const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
-
-    const balanceAfter = await ethers.provider.getBalance(owner.address);
-    expect(balanceAfter).to.equal(balanceBefore + ethers.parseEther("1") - gasUsed);
-  });
-
-  it("lets the owner reclaim unsold tokens only after the end date", async function () {
-    const { ico, token, owner, endDate, networkHelpers, ethers } = await deployFixture();
-
-    await expect(
-      ico.connect(owner).withdrawUnsoldTokens(ethers.parseEther("1")),
-    ).to.be.revertedWith("ICO still running");
-
-    await networkHelpers.time.increaseTo(endDate + 1);
-
-    const icoBalance = await token.balanceOf(await ico.getAddress());
-    const ownerBalanceBefore = await token.balanceOf(owner.address);
-    await ico.connect(owner).withdrawUnsoldTokens(icoBalance);
-
-    expect(await token.balanceOf(owner.address)).to.equal(ownerBalanceBefore + icoBalance);
+    await ico.finalize();
+    expect(await ico.phase()).to.equal(4n); // Finalized
   });
 });

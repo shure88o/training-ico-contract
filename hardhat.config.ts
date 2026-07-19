@@ -3,7 +3,7 @@ import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mo
 
 const config: HardhatUserConfig = {
   plugins: [hardhatToolboxMochaEthersPlugin],
-  solidity: "0.8.20",
+  solidity: "0.8.24",
 };
 
 export default config;
